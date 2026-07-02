@@ -153,12 +153,41 @@ describe("CHARACTERIZATION: authorization-code token request (exchangeCode)", ()
     expect(Object.keys(headers).sort()).toEqual(["accept", "content-type", "dpop"]);
     expect(headers["accept"]).toBe("application/json");
     expect(headers["content-type"]).toBe("application/x-www-form-urlencoded");
-    const body = new URLSearchParams(tokenCall?.init?.body as string);
-    expect(body.get("grant_type")).toBe("authorization_code");
-    expect(body.get("code")).toBe("the-code");
-    expect(body.get("redirect_uri")).toBe("http://127.0.0.1/cb");
-    expect(body.get("code_verifier")).toBe("the-verifier");
-    expect(body.get("client_id")).toBe("pub-1");
+    // Pin the EXACT body bytes + field order (URLSearchParams preserves insertion order).
+    expect(tokenCall?.init?.body).toBe(
+      "grant_type=authorization_code&code=the-code&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcb" +
+        "&code_verifier=the-verifier&client_id=pub-1",
+    );
+    // The DPoP proof binds POST to the token endpoint, with no ath (no access token yet).
+    const proof = headers["dpop"] as string;
+    expect(decodeProtectedHeader(proof).typ).toBe("dpop+jwt");
+    const payload = decodeJwt(proof);
+    expect(payload["htm"]).toBe("POST");
+    expect(payload["htu"]).toBe(TOKEN_ENDPOINT);
+    expect(payload["ath"]).toBeUndefined();
+  });
+
+  it("§8: retries once with the nonce on a 400 challenge; retried proof echoes it", async () => {
+    let hits = 0;
+    const proofs: string[] = [];
+    const fetchImpl: FetchLike = async (_url, init) => {
+      hits += 1;
+      proofs.push(init?.headers?.["dpop"] as string);
+      if (hits === 1) return new Response("{}", { status: 400, headers: { "DPoP-Nonce": "N1" } });
+      return tokenResponse({ refresh_token: "rt-1" });
+    };
+    const session = await exchangeCode({
+      meta: META,
+      client: { client_id: "pub-1", redirect_uris: ["http://127.0.0.1/cb"] },
+      redirectUri: "http://127.0.0.1/cb",
+      code: "c",
+      codeVerifier: "v",
+      fetchImpl,
+    });
+    expect(hits).toBe(2);
+    expect(session.nonce).toBe("N1");
+    expect(decodeJwt(proofs[0] as string)["nonce"]).toBeUndefined();
+    expect(decodeJwt(proofs[1] as string)["nonce"]).toBe("N1");
   });
 
   it("confidential client: adds Basic authorization alongside accept", async () => {
@@ -191,9 +220,10 @@ describe("CHARACTERIZATION: authorization-code token request (exchangeCode)", ()
 });
 
 describe("CHARACTERIZATION: refresh token request (refreshSession)", () => {
-  it("POSTs grant_type=refresh_token with the refresh token + client_id", async () => {
+  /** A public-client session with a refresh token, ready to refresh. */
+  async function seededSession() {
     const seed: FetchLike = async () => tokenResponse({ refresh_token: "rt-1" });
-    const session = await exchangeCode({
+    return exchangeCode({
       meta: META,
       client: { client_id: "pub-1", redirect_uris: ["http://127.0.0.1/cb"] },
       redirectUri: "http://127.0.0.1/cb",
@@ -201,14 +231,50 @@ describe("CHARACTERIZATION: refresh token request (refreshSession)", () => {
       codeVerifier: "v",
       fetchImpl: seed,
     });
-    let body: URLSearchParams | undefined;
-    const refreshFetch: FetchLike = async (_url, init) => {
-      body = new URLSearchParams(init?.body as string);
+  }
+
+  it("POSTs the exact header set + body — public client refresh grant with DPoP binding", async () => {
+    const session = await seededSession();
+    let tokenCall: Call | undefined;
+    const refreshFetch: FetchLike = async (url, init) => {
+      tokenCall = { url, init };
       return tokenResponse({ access_token: "at-2", refresh_token: "rt-2" });
     };
     await refreshSession(session, refreshFetch);
-    expect(body?.get("grant_type")).toBe("refresh_token");
-    expect(body?.get("refresh_token")).toBe("rt-1");
-    expect(body?.get("client_id")).toBe("pub-1");
+    expect(tokenCall?.url).toBe(TOKEN_ENDPOINT);
+    expect(tokenCall?.init?.method).toBe("POST");
+    const headers = tokenCall?.init?.headers ?? {};
+    // Public client: accept present, authorization ABSENT (same posture as exchangeCode).
+    expect(Object.keys(headers).sort()).toEqual(["accept", "content-type", "dpop"]);
+    expect(headers["accept"]).toBe("application/json");
+    expect(headers["content-type"]).toBe("application/x-www-form-urlencoded");
+    // Pin the EXACT body bytes + field order.
+    expect(tokenCall?.init?.body).toBe(
+      "grant_type=refresh_token&refresh_token=rt-1&client_id=pub-1",
+    );
+    // The DPoP proof binds POST to the token endpoint, no ath.
+    const proof = headers["dpop"] as string;
+    expect(decodeProtectedHeader(proof).typ).toBe("dpop+jwt");
+    const payload = decodeJwt(proof);
+    expect(payload["htm"]).toBe("POST");
+    expect(payload["htu"]).toBe(TOKEN_ENDPOINT);
+    expect(payload["ath"]).toBeUndefined();
+  });
+
+  it("§8: retries once with the nonce on a 400 challenge; retried proof echoes it", async () => {
+    const session = await seededSession();
+    let hits = 0;
+    const proofs: string[] = [];
+    const refreshFetch: FetchLike = async (_url, init) => {
+      hits += 1;
+      proofs.push(init?.headers?.["dpop"] as string);
+      if (hits === 1) return new Response("{}", { status: 400, headers: { "DPoP-Nonce": "N1" } });
+      return tokenResponse({ access_token: "at-2", refresh_token: "rt-2" });
+    };
+    await refreshSession(session, refreshFetch);
+    expect(hits).toBe(2);
+    expect(session.nonce).toBe("N1");
+    expect(decodeJwt(proofs[0] as string)["nonce"]).toBeUndefined();
+    expect(decodeJwt(proofs[1] as string)["nonce"]).toBe("N1");
   });
 });
