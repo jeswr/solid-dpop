@@ -24,15 +24,12 @@ export type {
  * `rdfFetchFor` surface as the client-credentials session.
  */
 export {
-  assertEndpointTransport,
-  assertIssuerTransport,
   buildAuthorizationUrl,
   cliLogin,
   DEFAULT_SCOPE,
   discoverProvider,
   exchangeCode,
   generatePkce,
-  isLoopbackHost,
   pkceChallengeS256,
   refreshSession,
   registerClient,
@@ -71,3 +68,12 @@ export {
   saveSession,
   serializeSession,
 } from "./sessionStore.js";
+/**
+ * The https-or-loopback transport policy — the single reviewed guard applied to the OIDC issuer and
+ * to every credential-bearing endpoint discovered from it (RFC 8252 §8.3 loopback carve-out).
+ */
+export {
+  assertEndpointTransport,
+  assertIssuerTransport,
+  isLoopbackHost,
+} from "./transport.js";

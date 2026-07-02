@@ -1,25 +1,5 @@
 import { type DpopKeyPair } from "./dpop.js";
 import type { FetchLike, SolidSessionState } from "./session.js";
-/** True iff `host` (a URL hostname, no port) is a loopback address. */
-export declare function isLoopbackHost(host: string): boolean;
-/**
- * Enforce the issuer transport policy: `https:` always allowed; `http:` allowed ONLY for loopback
- * hosts. This is the deliberate fix for the reactive-auth 0.1.3 "rejects all http issuers" bug —
- * it must NOT reject `http://localhost:3000/` while it MUST reject `http://idp.example.com/`.
- *
- * @throws if the issuer uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-export declare function assertIssuerTransport(issuer: string): void;
-/**
- * Enforce the SAME https-or-loopback transport policy on a single DISCOVERED endpoint URL
- * (`authorization_endpoint`, `token_endpoint`, `registration_endpoint`, …). A malicious or
- * misconfigured discovery document could point an endpoint at an insecure non-loopback `http:` URL
- * (or a different origin) and siphon authorization codes, refresh tokens, or client secrets — so
- * every endpoint we will actually contact is validated, not just the input issuer.
- *
- * @throws if the endpoint uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-export declare function assertEndpointTransport(endpoint: string, name: string): void;
 export interface PkcePair {
     /** High-entropy random verifier (43–128 chars, unreserved alphabet). */
     readonly verifier: string;

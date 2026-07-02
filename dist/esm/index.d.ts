@@ -13,7 +13,7 @@ export type { AuthCodeSession, AuthUrlParams, ClientRegistration, CliLoginOption
  * `AuthCodeSession` (a `SolidSessionState` + refresh token) usable with the same `authedFetch` /
  * `rdfFetchFor` surface as the client-credentials session.
  */
-export { assertEndpointTransport, assertIssuerTransport, buildAuthorizationUrl, cliLogin, DEFAULT_SCOPE, discoverProvider, exchangeCode, generatePkce, isLoopbackHost, pkceChallengeS256, refreshSession, registerClient, startLoopbackListener, staticClient, } from "./authCode.js";
+export { buildAuthorizationUrl, cliLogin, DEFAULT_SCOPE, discoverProvider, exchangeCode, generatePkce, pkceChallengeS256, refreshSession, registerClient, startLoopbackListener, staticClient, } from "./authCode.js";
 export type { DpopKeyPair, DpopProofParams } from "./dpop.js";
 export { accessTokenHash, canonicalHtu, createDpopProof, DPOP_ALG, exportDpopKeyPairJwk, generateDpopKeyPair, importDpopKeyPairJwk, toDpopKeyPair, } from "./dpop.js";
 export type { ClientCredentials, FetchLike, SolidSessionState } from "./session.js";
@@ -25,4 +25,9 @@ export type { StoredSession } from "./sessionStore.js";
  * original `jkt` — regenerating the keypair fails refresh (verified live). See sessionStore.ts.
  */
 export { deserializeSession, loadSession, saveSession, serializeSession, } from "./sessionStore.js";
+/**
+ * The https-or-loopback transport policy — the single reviewed guard applied to the OIDC issuer and
+ * to every credential-bearing endpoint discovered from it (RFC 8252 §8.3 loopback carve-out).
+ */
+export { assertEndpointTransport, assertIssuerTransport, isLoopbackHost, } from "./transport.js";
 //# sourceMappingURL=index.d.ts.map

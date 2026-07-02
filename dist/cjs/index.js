@@ -9,22 +9,19 @@
  * OIDC driver ships from the separate `@jeswr/solid-dpop/testing` subpath (never re-exported here).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.serializeSession = exports.saveSession = exports.loadSession = exports.deserializeSession = exports.rdfFetchFor = exports.generateSessionKeyPair = exports.discoveryUrl = exports.createSession = exports.authedFetch = exports.acquireToken = exports.toDpopKeyPair = exports.importDpopKeyPairJwk = exports.generateDpopKeyPair = exports.exportDpopKeyPairJwk = exports.DPOP_ALG = exports.createDpopProof = exports.canonicalHtu = exports.accessTokenHash = exports.staticClient = exports.startLoopbackListener = exports.registerClient = exports.refreshSession = exports.pkceChallengeS256 = exports.isLoopbackHost = exports.generatePkce = exports.exchangeCode = exports.discoverProvider = exports.DEFAULT_SCOPE = exports.cliLogin = exports.buildAuthorizationUrl = exports.assertIssuerTransport = exports.assertEndpointTransport = void 0;
+exports.isLoopbackHost = exports.assertIssuerTransport = exports.assertEndpointTransport = exports.serializeSession = exports.saveSession = exports.loadSession = exports.deserializeSession = exports.rdfFetchFor = exports.generateSessionKeyPair = exports.discoveryUrl = exports.createSession = exports.authedFetch = exports.acquireToken = exports.toDpopKeyPair = exports.importDpopKeyPairJwk = exports.generateDpopKeyPair = exports.exportDpopKeyPairJwk = exports.DPOP_ALG = exports.createDpopProof = exports.canonicalHtu = exports.accessTokenHash = exports.staticClient = exports.startLoopbackListener = exports.registerClient = exports.refreshSession = exports.pkceChallengeS256 = exports.generatePkce = exports.exchangeCode = exports.discoverProvider = exports.DEFAULT_SCOPE = exports.cliLogin = exports.buildAuthorizationUrl = void 0;
 /**
  * Solid-OIDC authorization-code + PKCE + DPoP — the *user-delegated* login. Produces an
  * `AuthCodeSession` (a `SolidSessionState` + refresh token) usable with the same `authedFetch` /
  * `rdfFetchFor` surface as the client-credentials session.
  */
 var authCode_js_1 = require("./authCode.js");
-Object.defineProperty(exports, "assertEndpointTransport", { enumerable: true, get: function () { return authCode_js_1.assertEndpointTransport; } });
-Object.defineProperty(exports, "assertIssuerTransport", { enumerable: true, get: function () { return authCode_js_1.assertIssuerTransport; } });
 Object.defineProperty(exports, "buildAuthorizationUrl", { enumerable: true, get: function () { return authCode_js_1.buildAuthorizationUrl; } });
 Object.defineProperty(exports, "cliLogin", { enumerable: true, get: function () { return authCode_js_1.cliLogin; } });
 Object.defineProperty(exports, "DEFAULT_SCOPE", { enumerable: true, get: function () { return authCode_js_1.DEFAULT_SCOPE; } });
 Object.defineProperty(exports, "discoverProvider", { enumerable: true, get: function () { return authCode_js_1.discoverProvider; } });
 Object.defineProperty(exports, "exchangeCode", { enumerable: true, get: function () { return authCode_js_1.exchangeCode; } });
 Object.defineProperty(exports, "generatePkce", { enumerable: true, get: function () { return authCode_js_1.generatePkce; } });
-Object.defineProperty(exports, "isLoopbackHost", { enumerable: true, get: function () { return authCode_js_1.isLoopbackHost; } });
 Object.defineProperty(exports, "pkceChallengeS256", { enumerable: true, get: function () { return authCode_js_1.pkceChallengeS256; } });
 Object.defineProperty(exports, "refreshSession", { enumerable: true, get: function () { return authCode_js_1.refreshSession; } });
 Object.defineProperty(exports, "registerClient", { enumerable: true, get: function () { return authCode_js_1.registerClient; } });
@@ -56,4 +53,12 @@ Object.defineProperty(exports, "deserializeSession", { enumerable: true, get: fu
 Object.defineProperty(exports, "loadSession", { enumerable: true, get: function () { return sessionStore_js_1.loadSession; } });
 Object.defineProperty(exports, "saveSession", { enumerable: true, get: function () { return sessionStore_js_1.saveSession; } });
 Object.defineProperty(exports, "serializeSession", { enumerable: true, get: function () { return sessionStore_js_1.serializeSession; } });
+/**
+ * The https-or-loopback transport policy — the single reviewed guard applied to the OIDC issuer and
+ * to every credential-bearing endpoint discovered from it (RFC 8252 §8.3 loopback carve-out).
+ */
+var transport_js_1 = require("./transport.js");
+Object.defineProperty(exports, "assertEndpointTransport", { enumerable: true, get: function () { return transport_js_1.assertEndpointTransport; } });
+Object.defineProperty(exports, "assertIssuerTransport", { enumerable: true, get: function () { return transport_js_1.assertIssuerTransport; } });
+Object.defineProperty(exports, "isLoopbackHost", { enumerable: true, get: function () { return transport_js_1.isLoopbackHost; } });
 //# sourceMappingURL=index.js.map

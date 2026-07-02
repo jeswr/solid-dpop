@@ -30,76 +30,11 @@ import type { AddressInfo } from "node:net";
 import { createDpopProof, type DpopKeyPair, generateDpopKeyPair } from "./dpop.js";
 import type { FetchLike, SolidSessionState } from "./session.js";
 import { discoveryUrl } from "./session.js";
+import { assertEndpointTransport, assertIssuerTransport } from "./transport.js";
 
 /** The default transport: global fetch, narrowed to {@link FetchLike}. */
 const defaultFetch: FetchLike = (input, init) =>
   globalThis.fetch(input, init as RequestInit | undefined);
-
-// ─────────────────────────────────────────── issuer transport guard ───────────────────────────
-
-/** Loopback hosts for which `http:` is allowed (RFC 8252 §8.3). `localhost` included per the BCP. */
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
-
-/** True iff `host` (a URL hostname, no port) is a loopback address. */
-export function isLoopbackHost(host: string): boolean {
-  return LOOPBACK_HOSTS.has(host.toLowerCase());
-}
-
-/**
- * Centralized transport policy: `https:` always allowed; `http:` allowed ONLY for loopback hosts;
- * any other scheme rejected. This is the single source of truth for "is this URL safe to send
- * credentials to" — the reactive-auth D11 loopback rule. It backs BOTH the input-issuer guard
- * ({@link assertIssuerTransport}) AND the per-endpoint guard applied to discovered metadata
- * ({@link assertEndpointTransport}), so a discovered `token_endpoint` is held to the same bar as
- * the issuer the caller typed.
- *
- * @param url   the URL to validate.
- * @param label a human label (e.g. `"issuer"`, `"token_endpoint"`) used in the thrown error.
- * @throws if the URL uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-function assertSecureTransport(url: string, label: string): void {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    throw new Error(`Invalid ${label} URL: ${url}`);
-  }
-  if (u.protocol === "https:") return;
-  if (u.protocol === "http:") {
-    if (isLoopbackHost(u.hostname)) return;
-    throw new Error(
-      `Insecure ${label} ${url}: http is only permitted for loopback hosts ` +
-        `(127.0.0.1, [::1], localhost). Use https for ${u.hostname}.`,
-    );
-  }
-  throw new Error(
-    `Unsupported ${label} scheme ${u.protocol} in ${url} (expected https or http-loopback).`,
-  );
-}
-
-/**
- * Enforce the issuer transport policy: `https:` always allowed; `http:` allowed ONLY for loopback
- * hosts. This is the deliberate fix for the reactive-auth 0.1.3 "rejects all http issuers" bug —
- * it must NOT reject `http://localhost:3000/` while it MUST reject `http://idp.example.com/`.
- *
- * @throws if the issuer uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-export function assertIssuerTransport(issuer: string): void {
-  assertSecureTransport(issuer, "issuer");
-}
-
-/**
- * Enforce the SAME https-or-loopback transport policy on a single DISCOVERED endpoint URL
- * (`authorization_endpoint`, `token_endpoint`, `registration_endpoint`, …). A malicious or
- * misconfigured discovery document could point an endpoint at an insecure non-loopback `http:` URL
- * (or a different origin) and siphon authorization codes, refresh tokens, or client secrets — so
- * every endpoint we will actually contact is validated, not just the input issuer.
- *
- * @throws if the endpoint uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-export function assertEndpointTransport(endpoint: string, name: string): void {
-  assertSecureTransport(endpoint, name);
-}
 
 // ─────────────────────────────────────────────────── PKCE (RFC 7636) ──────────────────────────
 

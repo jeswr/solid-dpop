@@ -1,9 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_SCOPE = void 0;
-exports.isLoopbackHost = isLoopbackHost;
-exports.assertIssuerTransport = assertIssuerTransport;
-exports.assertEndpointTransport = assertEndpointTransport;
 exports.pkceChallengeS256 = pkceChallengeS256;
 exports.generatePkce = generatePkce;
 exports.discoverProvider = discoverProvider;
@@ -44,67 +41,9 @@ const node_crypto_1 = require("node:crypto");
 const node_http_1 = require("node:http");
 const dpop_js_1 = require("./dpop.js");
 const session_js_1 = require("./session.js");
+const transport_js_1 = require("./transport.js");
 /** The default transport: global fetch, narrowed to {@link FetchLike}. */
 const defaultFetch = (input, init) => globalThis.fetch(input, init);
-// ─────────────────────────────────────────── issuer transport guard ───────────────────────────
-/** Loopback hosts for which `http:` is allowed (RFC 8252 §8.3). `localhost` included per the BCP. */
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
-/** True iff `host` (a URL hostname, no port) is a loopback address. */
-function isLoopbackHost(host) {
-    return LOOPBACK_HOSTS.has(host.toLowerCase());
-}
-/**
- * Centralized transport policy: `https:` always allowed; `http:` allowed ONLY for loopback hosts;
- * any other scheme rejected. This is the single source of truth for "is this URL safe to send
- * credentials to" — the reactive-auth D11 loopback rule. It backs BOTH the input-issuer guard
- * ({@link assertIssuerTransport}) AND the per-endpoint guard applied to discovered metadata
- * ({@link assertEndpointTransport}), so a discovered `token_endpoint` is held to the same bar as
- * the issuer the caller typed.
- *
- * @param url   the URL to validate.
- * @param label a human label (e.g. `"issuer"`, `"token_endpoint"`) used in the thrown error.
- * @throws if the URL uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-function assertSecureTransport(url, label) {
-    let u;
-    try {
-        u = new URL(url);
-    }
-    catch {
-        throw new Error(`Invalid ${label} URL: ${url}`);
-    }
-    if (u.protocol === "https:")
-        return;
-    if (u.protocol === "http:") {
-        if (isLoopbackHost(u.hostname))
-            return;
-        throw new Error(`Insecure ${label} ${url}: http is only permitted for loopback hosts ` +
-            `(127.0.0.1, [::1], localhost). Use https for ${u.hostname}.`);
-    }
-    throw new Error(`Unsupported ${label} scheme ${u.protocol} in ${url} (expected https or http-loopback).`);
-}
-/**
- * Enforce the issuer transport policy: `https:` always allowed; `http:` allowed ONLY for loopback
- * hosts. This is the deliberate fix for the reactive-auth 0.1.3 "rejects all http issuers" bug —
- * it must NOT reject `http://localhost:3000/` while it MUST reject `http://idp.example.com/`.
- *
- * @throws if the issuer uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-function assertIssuerTransport(issuer) {
-    assertSecureTransport(issuer, "issuer");
-}
-/**
- * Enforce the SAME https-or-loopback transport policy on a single DISCOVERED endpoint URL
- * (`authorization_endpoint`, `token_endpoint`, `registration_endpoint`, …). A malicious or
- * misconfigured discovery document could point an endpoint at an insecure non-loopback `http:` URL
- * (or a different origin) and siphon authorization codes, refresh tokens, or client secrets — so
- * every endpoint we will actually contact is validated, not just the input issuer.
- *
- * @throws if the endpoint uses `http:` against a non-loopback host, or an unsupported scheme.
- */
-function assertEndpointTransport(endpoint, name) {
-    assertSecureTransport(endpoint, name);
-}
 /**
  * Derive the S256 PKCE challenge from a verifier: `BASE64URL-ENCODE(SHA256(ASCII(verifier)))`
  * (RFC 7636 §4.2). Exposed so the unit suite can assert the RFC 7636 Appendix-B test vector.
@@ -137,7 +76,7 @@ function generatePkce() {
  * All checks run BEFORE the metadata is returned (and before any downstream request is made).
  */
 async function discoverProvider(issuer, fetchImpl = defaultFetch) {
-    assertIssuerTransport(issuer);
+    (0, transport_js_1.assertIssuerTransport)(issuer);
     const url = (0, session_js_1.discoveryUrl)(issuer);
     const res = await fetchImpl(url);
     if (!res.ok) {
@@ -154,10 +93,10 @@ async function discoverProvider(issuer, fetchImpl = defaultFetch) {
     }
     // Apply the issuer's https-or-loopback policy to every discovered endpoint we will contact, so a
     // malicious document cannot point a sensitive endpoint at an insecure / off-origin URL.
-    assertEndpointTransport(meta.authorization_endpoint, "authorization_endpoint");
-    assertEndpointTransport(meta.token_endpoint, "token_endpoint");
+    (0, transport_js_1.assertEndpointTransport)(meta.authorization_endpoint, "authorization_endpoint");
+    (0, transport_js_1.assertEndpointTransport)(meta.token_endpoint, "token_endpoint");
     if (meta.registration_endpoint) {
-        assertEndpointTransport(meta.registration_endpoint, "registration_endpoint");
+        (0, transport_js_1.assertEndpointTransport)(meta.registration_endpoint, "registration_endpoint");
     }
     return meta;
 }
