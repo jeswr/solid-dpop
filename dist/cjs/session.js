@@ -18,12 +18,7 @@ exports.rdfFetchFor = rdfFetchFor;
  * (`authedFetch`) is identical, only `acquireToken` differs.
  */
 const dpop_js_1 = require("./dpop.js");
-/**
- * The default transport: global fetch, adapted to FetchLike. A thin wrapper is needed because
- * the lib DOM `fetch` type and our narrow `FetchLike` body union are not structurally
- * assignable in both directions under strict settings; the runtime values are compatible.
- */
-const defaultFetch = (input, init) => globalThis.fetch(input, init);
+const tokenEndpoint_js_1 = require("./tokenEndpoint.js");
 /**
  * Build the OIDC Discovery URL for an issuer. Per OpenID Connect Discovery 1.0 §4, the well-known
  * suffix is APPENDED to the issuer (including any path), so `https://host/realm` →
@@ -57,7 +52,7 @@ async function generateSessionKeyPair() {
  * `use_dpop_nonce` challenge: if the AS rejects the first attempt demanding a nonce, we
  * retry once with the supplied `DPoP-Nonce`.
  */
-async function acquireToken(creds, keyPair, fetchImpl = defaultFetch) {
+async function acquireToken(creds, keyPair, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     const tokenEndpoint = await discoverTokenEndpoint(creds.issuer, fetchImpl);
     const authHeader = "Basic " +
         Buffer.from(`${encodeURIComponent(creds.id)}:${encodeURIComponent(creds.secret)}`).toString("base64");
@@ -65,40 +60,13 @@ async function acquireToken(creds, keyPair, fetchImpl = defaultFetch) {
         grant_type: "client_credentials",
         scope: "webid",
     }).toString();
-    const attempt = async (nonce) => {
-        const dpop = await (0, dpop_js_1.createDpopProof)({
-            keyPair,
-            htm: "POST",
-            htu: tokenEndpoint,
-            ...(nonce !== undefined ? { nonce } : {}),
-        });
-        return fetchImpl(tokenEndpoint, {
-            method: "POST",
-            headers: {
-                authorization: authHeader,
-                "content-type": "application/x-www-form-urlencoded",
-                dpop,
-            },
-            body,
-        });
-    };
-    let res = await attempt();
-    let nonce = res.headers.get("DPoP-Nonce") ?? undefined;
-    if (res.status === 400 && nonce) {
-        // RFC 9449 §8 nonce challenge — retry once with the nonce.
-        res = await attempt(nonce);
-        nonce = res.headers.get("DPoP-Nonce") ?? nonce;
-    }
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Token request failed (${res.status}): ${text.slice(0, 300)}`);
-    }
-    const token = (await res.json());
+    // Client-credentials always authenticates with Basic; it does NOT send an `accept` header.
+    const { token, nonce } = await (0, tokenEndpoint_js_1.postToTokenEndpoint)(tokenEndpoint, keyPair, body, { authorization: authHeader, "content-type": "application/x-www-form-urlencoded" }, fetchImpl);
     const expiresAt = Date.now() + (token.expires_in ?? 300) * 1000;
     return { accessToken: token.access_token, expiresAt, ...(nonce ? { nonce } : {}) };
 }
 /** Create a fully-initialised server-side session (keypair + first token). */
-async function createSession(creds, fetchImpl = defaultFetch) {
+async function createSession(creds, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     const keyPair = await generateSessionKeyPair();
     const { accessToken, expiresAt, nonce } = await acquireToken(creds, keyPair, fetchImpl);
     return { keyPair, accessToken, expiresAt, ...(nonce ? { nonce } : {}) };
@@ -113,7 +81,7 @@ async function createSession(creds, fetchImpl = defaultFetch) {
  * refreshes via `refreshSession` from `authCode.ts`, so it passes `undefined` here — in that case
  * an expired token is left as-is for the caller (or its own refresh loop) to handle.
  */
-async function authedFetch(session, creds, method, url, init = {}, fetchImpl = defaultFetch) {
+async function authedFetch(session, creds, method, url, init = {}, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     if (creds && Date.now() >= session.expiresAt) {
         const refreshed = await acquireToken(creds, session.keyPair, fetchImpl);
         session.accessToken = refreshed.accessToken;
@@ -161,7 +129,7 @@ async function authedFetch(session, creds, method, url, init = {}, fetchImpl = d
  * Adapts the standard DOM `fetch` signature down onto `authedFetch`, so RDF helpers that take a
  * `fetch` option can transparently issue DPoP-bound requests.
  */
-function rdfFetchFor(session, creds, fetchImpl = defaultFetch) {
+function rdfFetchFor(session, creds, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     return (async (input, init) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
         const method = init?.method ?? "GET";

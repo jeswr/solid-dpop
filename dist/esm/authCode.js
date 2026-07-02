@@ -26,11 +26,10 @@
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { createDpopProof, generateDpopKeyPair } from "./dpop.js";
+import { generateDpopKeyPair } from "./dpop.js";
 import { discoveryUrl } from "./session.js";
+import { defaultFetch, postToTokenEndpoint } from "./tokenEndpoint.js";
 import { assertEndpointTransport, assertIssuerTransport } from "./transport.js";
-/** The default transport: global fetch, narrowed to {@link FetchLike}. */
-const defaultFetch = (input, init) => globalThis.fetch(input, init);
 /**
  * Derive the S256 PKCE challenge from a verifier: `BASE64URL-ENCODE(SHA256(ASCII(verifier)))`
  * (RFC 7636 §4.2). Exposed so the unit suite can assert the RFC 7636 Appendix-B test vector.
@@ -250,51 +249,22 @@ export async function startLoopbackListener(path = "/callback") {
     return { redirectUri, waitForCode, close };
 }
 /**
- * POST to the token endpoint with a DPoP proof, handling the RFC 9449 §8 `use_dpop_nonce`
- * challenge (a 400 carrying `DPoP-Nonce`) by retrying once with the supplied nonce. Returns the
- * parsed token response plus the latest server nonce.
+ * POST to the token endpoint with a DPoP proof (via the shared {@link postToTokenEndpoint}, which
+ * owns the RFC 9449 §8 `use_dpop_nonce` retry). Sends `accept: application/json`, and — for a
+ * confidential client (a DCR client with a secret) — a Basic `authorization` header; public clients
+ * send `client_id` in the body (set by callers) and authenticate via PKCE only.
  */
 async function postTokenWithDpop(meta, keyPair, body, client, fetchImpl) {
-    const headers = (dpop) => {
-        const h = {
-            "content-type": "application/x-www-form-urlencoded",
-            accept: "application/json",
-            dpop,
-        };
-        // Confidential clients (DCR with a secret) authenticate with Basic; public clients send
-        // client_id in the body (already set by callers) and authenticate via PKCE only.
-        if (client.client_secret) {
-            h.authorization =
-                "Basic " +
-                    Buffer.from(`${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`).toString("base64");
-        }
-        return h;
+    const baseHeaders = {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
     };
-    const attempt = async (nonce) => {
-        const dpop = await createDpopProof({
-            keyPair,
-            htm: "POST",
-            htu: meta.token_endpoint,
-            ...(nonce !== undefined ? { nonce } : {}),
-        });
-        return fetchImpl(meta.token_endpoint, {
-            method: "POST",
-            headers: headers(dpop),
-            body: body.toString(),
-        });
-    };
-    let res = await attempt();
-    let nonce = res.headers.get("DPoP-Nonce") ?? undefined;
-    if (res.status === 400 && nonce) {
-        res = await attempt(nonce);
-        nonce = res.headers.get("DPoP-Nonce") ?? nonce;
+    if (client.client_secret) {
+        baseHeaders.authorization =
+            "Basic " +
+                Buffer.from(`${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`).toString("base64");
     }
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Token request failed (${res.status}): ${text.slice(0, 300)}`);
-    }
-    const token = (await res.json());
-    return { token, ...(nonce ? { nonce } : {}) };
+    return postToTokenEndpoint(meta.token_endpoint, keyPair, body.toString(), baseHeaders, fetchImpl);
 }
 /**
  * Exchange an authorization `code` (+ PKCE `verifier`) for a DPoP-bound access token (and a refresh

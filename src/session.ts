@@ -10,6 +10,7 @@
  * (`authedFetch`) is identical, only `acquireToken` differs.
  */
 import { createDpopProof, type DpopKeyPair, generateDpopKeyPair } from "./dpop.js";
+import { defaultFetch, postToTokenEndpoint } from "./tokenEndpoint.js";
 
 export interface ClientCredentials {
   /** OIDC issuer base URL (the pod's IdP), e.g. http://localhost:3099/ */
@@ -22,12 +23,6 @@ export interface ClientCredentials {
 
 interface OidcConfig {
   readonly token_endpoint: string;
-}
-
-interface TokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in?: number;
 }
 
 export interface SolidSessionState {
@@ -52,14 +47,6 @@ export type FetchLike = (
     body?: string | Uint8Array;
   },
 ) => Promise<Response>;
-
-/**
- * The default transport: global fetch, adapted to FetchLike. A thin wrapper is needed because
- * the lib DOM `fetch` type and our narrow `FetchLike` body union are not structurally
- * assignable in both directions under strict settings; the runtime values are compatible.
- */
-const defaultFetch: FetchLike = (input, init) =>
-  globalThis.fetch(input, init as RequestInit | undefined);
 
 /**
  * Build the OIDC Discovery URL for an issuer. Per OpenID Connect Discovery 1.0 §4, the well-known
@@ -108,43 +95,19 @@ export async function acquireToken(
     Buffer.from(`${encodeURIComponent(creds.id)}:${encodeURIComponent(creds.secret)}`).toString(
       "base64",
     );
-
   const body = new URLSearchParams({
     grant_type: "client_credentials",
     scope: "webid",
   }).toString();
 
-  const attempt = async (nonce?: string): Promise<Response> => {
-    const dpop = await createDpopProof({
-      keyPair,
-      htm: "POST",
-      htu: tokenEndpoint,
-      ...(nonce !== undefined ? { nonce } : {}),
-    });
-    return fetchImpl(tokenEndpoint, {
-      method: "POST",
-      headers: {
-        authorization: authHeader,
-        "content-type": "application/x-www-form-urlencoded",
-        dpop,
-      },
-      body,
-    });
-  };
-
-  let res = await attempt();
-  let nonce = res.headers.get("DPoP-Nonce") ?? undefined;
-  if (res.status === 400 && nonce) {
-    // RFC 9449 §8 nonce challenge — retry once with the nonce.
-    res = await attempt(nonce);
-    nonce = res.headers.get("DPoP-Nonce") ?? nonce;
-  }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Token request failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-  const token = (await res.json()) as TokenResponse;
+  // Client-credentials always authenticates with Basic; it does NOT send an `accept` header.
+  const { token, nonce } = await postToTokenEndpoint(
+    tokenEndpoint,
+    keyPair,
+    body,
+    { authorization: authHeader, "content-type": "application/x-www-form-urlencoded" },
+    fetchImpl,
+  );
   const expiresAt = Date.now() + (token.expires_in ?? 300) * 1000;
   return { accessToken: token.access_token, expiresAt, ...(nonce ? { nonce } : {}) };
 }

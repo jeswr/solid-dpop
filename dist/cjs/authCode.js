@@ -41,9 +41,8 @@ const node_crypto_1 = require("node:crypto");
 const node_http_1 = require("node:http");
 const dpop_js_1 = require("./dpop.js");
 const session_js_1 = require("./session.js");
+const tokenEndpoint_js_1 = require("./tokenEndpoint.js");
 const transport_js_1 = require("./transport.js");
-/** The default transport: global fetch, narrowed to {@link FetchLike}. */
-const defaultFetch = (input, init) => globalThis.fetch(input, init);
 /**
  * Derive the S256 PKCE challenge from a verifier: `BASE64URL-ENCODE(SHA256(ASCII(verifier)))`
  * (RFC 7636 §4.2). Exposed so the unit suite can assert the RFC 7636 Appendix-B test vector.
@@ -75,7 +74,7 @@ function generatePkce() {
  *
  * All checks run BEFORE the metadata is returned (and before any downstream request is made).
  */
-async function discoverProvider(issuer, fetchImpl = defaultFetch) {
+async function discoverProvider(issuer, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     (0, transport_js_1.assertIssuerTransport)(issuer);
     const url = (0, session_js_1.discoveryUrl)(issuer);
     const res = await fetchImpl(url);
@@ -111,7 +110,7 @@ async function discoverProvider(issuer, fetchImpl = defaultFetch) {
  * screen shows a stable app name. DCR is the right default only for CLIs / local dev where no
  * public https client-doc URL exists.
  */
-async function registerClient(meta, redirectUri, opts = {}, fetchImpl = defaultFetch) {
+async function registerClient(meta, redirectUri, opts = {}, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     if (!meta.registration_endpoint) {
         throw new Error(`Provider ${meta.issuer} advertises no registration_endpoint; supply a static client_id ` +
             `(Client Identifier Document) via staticClient() instead.`);
@@ -263,58 +262,29 @@ async function startLoopbackListener(path = "/callback") {
     return { redirectUri, waitForCode, close };
 }
 /**
- * POST to the token endpoint with a DPoP proof, handling the RFC 9449 §8 `use_dpop_nonce`
- * challenge (a 400 carrying `DPoP-Nonce`) by retrying once with the supplied nonce. Returns the
- * parsed token response plus the latest server nonce.
+ * POST to the token endpoint with a DPoP proof (via the shared {@link postToTokenEndpoint}, which
+ * owns the RFC 9449 §8 `use_dpop_nonce` retry). Sends `accept: application/json`, and — for a
+ * confidential client (a DCR client with a secret) — a Basic `authorization` header; public clients
+ * send `client_id` in the body (set by callers) and authenticate via PKCE only.
  */
 async function postTokenWithDpop(meta, keyPair, body, client, fetchImpl) {
-    const headers = (dpop) => {
-        const h = {
-            "content-type": "application/x-www-form-urlencoded",
-            accept: "application/json",
-            dpop,
-        };
-        // Confidential clients (DCR with a secret) authenticate with Basic; public clients send
-        // client_id in the body (already set by callers) and authenticate via PKCE only.
-        if (client.client_secret) {
-            h.authorization =
-                "Basic " +
-                    Buffer.from(`${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`).toString("base64");
-        }
-        return h;
+    const baseHeaders = {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
     };
-    const attempt = async (nonce) => {
-        const dpop = await (0, dpop_js_1.createDpopProof)({
-            keyPair,
-            htm: "POST",
-            htu: meta.token_endpoint,
-            ...(nonce !== undefined ? { nonce } : {}),
-        });
-        return fetchImpl(meta.token_endpoint, {
-            method: "POST",
-            headers: headers(dpop),
-            body: body.toString(),
-        });
-    };
-    let res = await attempt();
-    let nonce = res.headers.get("DPoP-Nonce") ?? undefined;
-    if (res.status === 400 && nonce) {
-        res = await attempt(nonce);
-        nonce = res.headers.get("DPoP-Nonce") ?? nonce;
+    if (client.client_secret) {
+        baseHeaders.authorization =
+            "Basic " +
+                Buffer.from(`${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`).toString("base64");
     }
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Token request failed (${res.status}): ${text.slice(0, 300)}`);
-    }
-    const token = (await res.json());
-    return { token, ...(nonce ? { nonce } : {}) };
+    return (0, tokenEndpoint_js_1.postToTokenEndpoint)(meta.token_endpoint, keyPair, body.toString(), baseHeaders, fetchImpl);
 }
 /**
  * Exchange an authorization `code` (+ PKCE `verifier`) for a DPoP-bound access token (and a refresh
  * token when `offline_access` was granted). RFC 6749 §4.1.3 + RFC 7636 §4.5 + RFC 9449.
  */
 async function exchangeCode(args) {
-    const fetchImpl = args.fetchImpl ?? defaultFetch;
+    const fetchImpl = args.fetchImpl ?? tokenEndpoint_js_1.defaultFetch;
     const keyPair = args.keyPair ?? (await (0, dpop_js_1.generateDpopKeyPair)());
     const body = new URLSearchParams({
         grant_type: "authorization_code",
@@ -342,7 +312,7 @@ async function exchangeCode(args) {
  *
  * The DPoP keypair is REUSED across refreshes — the access token stays bound to the same `jkt`.
  */
-async function refreshSession(session, fetchImpl = defaultFetch) {
+async function refreshSession(session, fetchImpl = tokenEndpoint_js_1.defaultFetch) {
     if (!session.refreshToken) {
         throw new Error("Session has no refresh token; request the offline_access scope to enable refresh.");
     }
@@ -373,7 +343,7 @@ async function refreshSession(session, fetchImpl = defaultFetch) {
  * startLoopbackListener, buildAuthorizationUrl, exchangeCode) — that is what the live CSS spec does.
  */
 async function cliLogin(opts) {
-    const fetchImpl = opts.fetchImpl ?? defaultFetch;
+    const fetchImpl = opts.fetchImpl ?? tokenEndpoint_js_1.defaultFetch;
     const meta = await discoverProvider(opts.issuer, fetchImpl);
     const listener = await startLoopbackListener(opts.callbackPath ?? "/callback");
     try {

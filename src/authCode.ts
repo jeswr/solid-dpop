@@ -27,14 +27,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createDpopProof, type DpopKeyPair, generateDpopKeyPair } from "./dpop.js";
+import { type DpopKeyPair, generateDpopKeyPair } from "./dpop.js";
 import type { FetchLike, SolidSessionState } from "./session.js";
 import { discoveryUrl } from "./session.js";
+import { defaultFetch, postToTokenEndpoint, type TokenResponse } from "./tokenEndpoint.js";
 import { assertEndpointTransport, assertIssuerTransport } from "./transport.js";
-
-/** The default transport: global fetch, narrowed to {@link FetchLike}. */
-const defaultFetch: FetchLike = (input, init) =>
-  globalThis.fetch(input, init as RequestInit | undefined);
 
 // ─────────────────────────────────────────────────── PKCE (RFC 7636) ──────────────────────────
 
@@ -354,15 +351,6 @@ export async function startLoopbackListener(path = "/callback"): Promise<Loopbac
 
 // ─────────────────────────────────────────── token exchange (code + DPoP) ─────────────────────
 
-interface TokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in?: number;
-  refresh_token?: string;
-  id_token?: string;
-  scope?: string;
-}
-
 /**
  * Fired by {@link refreshSession} after the session adopts rotated tokens. The callback receives the
  * SAME mutated session (refreshed access token, rotated refresh token, same DPoP keypair), so a
@@ -390,9 +378,10 @@ export interface AuthCodeSession extends SolidSessionState {
 }
 
 /**
- * POST to the token endpoint with a DPoP proof, handling the RFC 9449 §8 `use_dpop_nonce`
- * challenge (a 400 carrying `DPoP-Nonce`) by retrying once with the supplied nonce. Returns the
- * parsed token response plus the latest server nonce.
+ * POST to the token endpoint with a DPoP proof (via the shared {@link postToTokenEndpoint}, which
+ * owns the RFC 9449 §8 `use_dpop_nonce` retry). Sends `accept: application/json`, and — for a
+ * confidential client (a DCR client with a secret) — a Basic `authorization` header; public clients
+ * send `client_id` in the body (set by callers) and authenticate via PKCE only.
  */
 async function postTokenWithDpop(
   meta: OidcProviderMetadata,
@@ -401,50 +390,18 @@ async function postTokenWithDpop(
   client: ClientRegistration,
   fetchImpl: FetchLike,
 ): Promise<{ token: TokenResponse; nonce?: string }> {
-  const headers = (dpop: string): Record<string, string> => {
-    const h: Record<string, string> = {
-      "content-type": "application/x-www-form-urlencoded",
-      accept: "application/json",
-      dpop,
-    };
-    // Confidential clients (DCR with a secret) authenticate with Basic; public clients send
-    // client_id in the body (already set by callers) and authenticate via PKCE only.
-    if (client.client_secret) {
-      h.authorization =
-        "Basic " +
-        Buffer.from(
-          `${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`,
-        ).toString("base64");
-    }
-    return h;
+  const baseHeaders: Record<string, string> = {
+    "content-type": "application/x-www-form-urlencoded",
+    accept: "application/json",
   };
-
-  const attempt = async (nonce?: string): Promise<Response> => {
-    const dpop = await createDpopProof({
-      keyPair,
-      htm: "POST",
-      htu: meta.token_endpoint,
-      ...(nonce !== undefined ? { nonce } : {}),
-    });
-    return fetchImpl(meta.token_endpoint, {
-      method: "POST",
-      headers: headers(dpop),
-      body: body.toString(),
-    });
-  };
-
-  let res = await attempt();
-  let nonce = res.headers.get("DPoP-Nonce") ?? undefined;
-  if (res.status === 400 && nonce) {
-    res = await attempt(nonce);
-    nonce = res.headers.get("DPoP-Nonce") ?? nonce;
+  if (client.client_secret) {
+    baseHeaders.authorization =
+      "Basic " +
+      Buffer.from(
+        `${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`,
+      ).toString("base64");
   }
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Token request failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-  const token = (await res.json()) as TokenResponse;
-  return { token, ...(nonce ? { nonce } : {}) };
+  return postToTokenEndpoint(meta.token_endpoint, keyPair, body.toString(), baseHeaders, fetchImpl);
 }
 
 /**
