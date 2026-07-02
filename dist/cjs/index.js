@@ -1,8 +1,12 @@
 "use strict";
 /**
- * @jeswr/solid-dpop — canonical Solid-OIDC client-credentials session + RFC 9449 DPoP proof
- * primitives, shared by the W6.5 integration prototypes (dpop-bridge, solid-sync, solid-mcp,
- * n8n-solid, wix-solid, slack-solid). PRIVATE / UNPUBLISHED — consumed via `file:` deps only.
+ * @jeswr/solid-dpop — the canonical Solid-OIDC client-credentials session + RFC 9449 DPoP proof
+ * primitives, plus the user-delegated authorization-code + PKCE + DPoP flow. `jose`-only crypto;
+ * dual ESM + CJS build committed to `dist/` so consumers `github:`-install it with no build step.
+ *
+ * PUBLIC package (`@jeswr/solid-dpop`), consumed by `@jeswr/solid-openid-client`, `@jeswr/auth-solid`
+ * and the Solid app forks' DPoP paths. This barrel is the `.` entry point; the test-only headless
+ * OIDC driver ships from the separate `@jeswr/solid-dpop/testing` subpath (never re-exported here).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.serializeSession = exports.saveSession = exports.loadSession = exports.deserializeSession = exports.rdfFetchFor = exports.generateSessionKeyPair = exports.discoveryUrl = exports.createSession = exports.authedFetch = exports.acquireToken = exports.toDpopKeyPair = exports.importDpopKeyPairJwk = exports.generateDpopKeyPair = exports.exportDpopKeyPairJwk = exports.DPOP_ALG = exports.createDpopProof = exports.canonicalHtu = exports.accessTokenHash = exports.staticClient = exports.startLoopbackListener = exports.registerClient = exports.refreshSession = exports.pkceChallengeS256 = exports.isLoopbackHost = exports.generatePkce = exports.exchangeCode = exports.discoverProvider = exports.DEFAULT_SCOPE = exports.cliLogin = exports.buildAuthorizationUrl = exports.assertIssuerTransport = exports.assertEndpointTransport = void 0;

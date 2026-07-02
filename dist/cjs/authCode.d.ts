@@ -76,7 +76,7 @@ export interface ClientRegistration {
  * is sent. We register a PUBLIC native client (no secret) using PKCE — `token_endpoint_auth_method:
  * "none"` — bound to the loopback `redirectUri`.
  *
- * TODO(client-identifier-document): the Solid-OIDC alternative to DCR is a static **Client
+ * Note (client-identifier-document): the Solid-OIDC alternative to DCR is a static **Client
  * Identifier Document** — an https URL serving a JSON-LD client doc whose `client_id` equals that
  * URL. {@link staticClient} is the seam for that path; a deployed app SHOULD use it so the consent
  * screen shows a stable app name. DCR is the right default only for CLIs / local dev where no

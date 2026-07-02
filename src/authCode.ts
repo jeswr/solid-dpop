@@ -1,8 +1,8 @@
 /**
  * Solid-OIDC **authorization-code + PKCE + DPoP** flow — the *user-delegated* login that the
- * client-credentials grant in `session.ts` cannot provide. This is the flow five W6.5 prototypes
- * (solid-sync, solid-webdav, slack-solid, hubspot-solid, the apple-health-import CLI) flagged as
- * "design-only", and the `dx` create-solid-app S2 blocker.
+ * client-credentials grant in `session.ts` cannot provide. This is the interactive login a CLI,
+ * native app, or server-side agent uses to act on behalf of a human user (as opposed to a
+ * service-account / self-hosted consumer, which uses the client-credentials grant).
  *
  * Standards: RFC 6749 (authorization-code), RFC 7636 (PKCE, S256), RFC 9449 (DPoP — proofs at the
  * token endpoint AND on resource requests), OpenID Connect Discovery 1.0, RFC 7591 (dynamic client
@@ -201,7 +201,7 @@ export interface ClientRegistration {
  * is sent. We register a PUBLIC native client (no secret) using PKCE — `token_endpoint_auth_method:
  * "none"` — bound to the loopback `redirectUri`.
  *
- * TODO(client-identifier-document): the Solid-OIDC alternative to DCR is a static **Client
+ * Note (client-identifier-document): the Solid-OIDC alternative to DCR is a static **Client
  * Identifier Document** — an https URL serving a JSON-LD client doc whose `client_id` equals that
  * URL. {@link staticClient} is the seam for that path; a deployed app SHOULD use it so the consent
  * screen shows a stable app name. DCR is the right default only for CLIs / local dev where no

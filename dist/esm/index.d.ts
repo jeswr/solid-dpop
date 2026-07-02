@@ -1,7 +1,11 @@
 /**
- * @jeswr/solid-dpop — canonical Solid-OIDC client-credentials session + RFC 9449 DPoP proof
- * primitives, shared by the W6.5 integration prototypes (dpop-bridge, solid-sync, solid-mcp,
- * n8n-solid, wix-solid, slack-solid). PRIVATE / UNPUBLISHED — consumed via `file:` deps only.
+ * @jeswr/solid-dpop — the canonical Solid-OIDC client-credentials session + RFC 9449 DPoP proof
+ * primitives, plus the user-delegated authorization-code + PKCE + DPoP flow. `jose`-only crypto;
+ * dual ESM + CJS build committed to `dist/` so consumers `github:`-install it with no build step.
+ *
+ * PUBLIC package (`@jeswr/solid-dpop`), consumed by `@jeswr/solid-openid-client`, `@jeswr/auth-solid`
+ * and the Solid app forks' DPoP paths. This barrel is the `.` entry point; the test-only headless
+ * OIDC driver ships from the separate `@jeswr/solid-dpop/testing` subpath (never re-exported here).
  */
 export type { AuthCodeSession, AuthUrlParams, ClientRegistration, CliLoginOptions, LoopbackListener, OidcProviderMetadata, OnTokensRefreshed, PkcePair, } from "./authCode.js";
 /**
