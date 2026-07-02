@@ -25,7 +25,9 @@ same change whenever you edit `src/`** — otherwise the committed `dist/` drift
   `typ`/`alg`/`jwk`, payload `htm`/`htu`/`jti`/`iat`/`ath`/`nonce`).
 - `createSession` / `acquireToken` / `authedFetch` / `generateSessionKeyPair` — the
   client-credentials grant against a CSS `.account` IdP, DPoP-bound resource requests with the
-  §8 nonce-challenge retry and token refresh.
+  §8 nonce-challenge retry and token refresh. The issuer and the discovered `token_endpoint` are
+  held to the same https-or-loopback transport policy as the authorization-code flow (below), so the
+  client secret is never sent over plaintext http to a non-loopback host.
 - `rdfFetchFor` — adapts a session to the DOM `fetch` signature that `@jeswr/fetch-rdf` expects.
 - **`cliLogin` / `discoverProvider` / `registerClient` / `staticClient` / `buildAuthorizationUrl`
   / `startLoopbackListener` / `exchangeCode` / `refreshSession` / `generatePkce` /
@@ -109,6 +111,13 @@ https-or-loopback rule (via `assertEndpointTransport`) to every endpoint it will
 `authorization_endpoint`, `token_endpoint`, and `registration_endpoint` — so a malicious or
 misconfigured document cannot redirect authorization codes, refresh tokens, or client secrets to an
 insecure off-origin URL.
+
+The **client-credentials** grant (`acquireToken` / `createSession`) applies the same guard: it
+`assertIssuerTransport`s the issuer before OIDC discovery and `assertEndpointTransport`s the
+discovered `token_endpoint` before Basic-authing the client secret to it — so a downgraded or
+off-origin plaintext-http token endpoint cannot siphon the secret. The single https-or-loopback
+policy lives in `src/transport.ts` and is shared by both grant flows; regression tests pin it in
+`test/session.test.ts` (client-credentials) and `test/authCode.test.ts` (authorization-code).
 
 ### Crypto policy
 
