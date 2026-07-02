@@ -11,6 +11,7 @@
  */
 import { createDpopProof, type DpopKeyPair, generateDpopKeyPair } from "./dpop.js";
 import { defaultFetch, postToTokenEndpoint } from "./tokenEndpoint.js";
+import { assertEndpointTransport, assertIssuerTransport } from "./transport.js";
 
 export interface ClientCredentials {
   /** OIDC issuer base URL (the pod's IdP), e.g. http://localhost:3099/ */
@@ -61,7 +62,16 @@ export function discoveryUrl(issuer: string): string {
   return u.toString();
 }
 
+/**
+ * Discover the `token_endpoint` for a client-credentials issuer, under the SAME https-or-loopback
+ * transport policy the authorization-code path applies (see {@link discoverProvider}). The client
+ * SECRET is Basic-authed to the discovered `token_endpoint`, so both the issuer (before the
+ * discovery fetch) and the discovered `token_endpoint` (before the secret-bearing POST) are held to
+ * that bar: a misconfigured or compromised discovery document cannot downgrade the token endpoint
+ * to a plaintext non-loopback `http:` URL and siphon the secret.
+ */
 async function discoverTokenEndpoint(issuer: string, fetchImpl: FetchLike): Promise<string> {
+  assertIssuerTransport(issuer);
   const url = discoveryUrl(issuer);
   const res = await fetchImpl(url);
   if (!res.ok) {
@@ -71,6 +81,7 @@ async function discoverTokenEndpoint(issuer: string, fetchImpl: FetchLike): Prom
   if (!cfg.token_endpoint) {
     throw new Error(`No token_endpoint in OIDC config at ${url}`);
   }
+  assertEndpointTransport(cfg.token_endpoint, "token_endpoint");
   return cfg.token_endpoint;
 }
 

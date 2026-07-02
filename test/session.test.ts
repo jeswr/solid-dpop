@@ -18,8 +18,10 @@ import {
   type SolidSessionState,
 } from "../src/index.js";
 
-const creds: ClientCredentials = { issuer: "http://idp.example/", id: "cid", secret: "csec" };
-const TOKEN_ENDPOINT = "http://idp.example/token";
+// https issuer/endpoint: the client SECRET is Basic-authed to token_endpoint, so the flow enforces
+// the https-or-loopback transport policy (see the "transport guard" describe block below).
+const creds: ClientCredentials = { issuer: "https://idp.example/", id: "cid", secret: "csec" };
+const TOKEN_ENDPOINT = "https://idp.example/token";
 
 function discoveryResponse(): Response {
   return new Response(JSON.stringify({ token_endpoint: TOKEN_ENDPOINT }), {
@@ -96,6 +98,71 @@ describe("acquireToken (client-credentials + DPoP)", () => {
     expect(tokenHits).toBe(2);
     expect(accessToken).toBe("at-123");
     expect(nonce).toBe("srv-nonce");
+  });
+});
+
+describe("acquireToken — transport guard on the secret-bearing client-credentials flow", () => {
+  it("REJECTS a non-loopback http issuer BEFORE any request (no secret over plaintext http)", async () => {
+    let requested = false;
+    const fetchImpl: FetchLike = async () => {
+      requested = true;
+      return discoveryResponse();
+    };
+    const http: ClientCredentials = {
+      issuer: "http://idp.example.com/",
+      id: "cid",
+      secret: "csec",
+    };
+    await expect(acquireToken(http, await generateSessionKeyPair(), fetchImpl)).rejects.toThrow(
+      /loopback/,
+    );
+    // The guard runs before the fetch — the discovery request must never leave.
+    expect(requested).toBe(false);
+  });
+
+  it("REJECTS a discovery doc that downgrades token_endpoint to non-loopback http (secret exfil)", async () => {
+    // Issuer is https (discovery is TLS-protected) but the doc points token_endpoint at plaintext
+    // http — the exact "malicious/misconfigured discovery document" the auth-code path already
+    // guards. The Basic-authed client secret must NOT be POSTed to it.
+    let postedToTokenEndpoint = false;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes(".well-known")) {
+        return new Response(JSON.stringify({ token_endpoint: "http://idp.example.com/token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      postedToTokenEndpoint = true;
+      return tokenResponse();
+    };
+    const good: ClientCredentials = {
+      issuer: "https://idp.example.com/",
+      id: "cid",
+      secret: "csec",
+    };
+    await expect(acquireToken(good, await generateSessionKeyPair(), fetchImpl)).rejects.toThrow(
+      /token_endpoint[\s\S]*loopback/,
+    );
+    expect(postedToTokenEndpoint).toBe(false);
+  });
+
+  it("ALLOWS a loopback http issuer + token_endpoint (local-CSS dev)", async () => {
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes(".well-known")) {
+        return new Response(JSON.stringify({ token_endpoint: "http://localhost:3099/token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return tokenResponse("local-at");
+    };
+    const local: ClientCredentials = {
+      issuer: "http://localhost:3099/",
+      id: "cid",
+      secret: "csec",
+    };
+    const { accessToken } = await acquireToken(local, await generateSessionKeyPair(), fetchImpl);
+    expect(accessToken).toBe("local-at");
   });
 });
 

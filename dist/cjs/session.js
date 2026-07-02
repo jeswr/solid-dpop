@@ -19,6 +19,7 @@ exports.rdfFetchFor = rdfFetchFor;
  */
 const dpop_js_1 = require("./dpop.js");
 const tokenEndpoint_js_1 = require("./tokenEndpoint.js");
+const transport_js_1 = require("./transport.js");
 /**
  * Build the OIDC Discovery URL for an issuer. Per OpenID Connect Discovery 1.0 §4, the well-known
  * suffix is APPENDED to the issuer (including any path), so `https://host/realm` →
@@ -31,7 +32,16 @@ function discoveryUrl(issuer) {
     u.pathname = `${u.pathname.replace(/\/+$/, "")}/.well-known/openid-configuration`;
     return u.toString();
 }
+/**
+ * Discover the `token_endpoint` for a client-credentials issuer, under the SAME https-or-loopback
+ * transport policy the authorization-code path applies (see {@link discoverProvider}). The client
+ * SECRET is Basic-authed to the discovered `token_endpoint`, so both the issuer (before the
+ * discovery fetch) and the discovered `token_endpoint` (before the secret-bearing POST) are held to
+ * that bar: a misconfigured or compromised discovery document cannot downgrade the token endpoint
+ * to a plaintext non-loopback `http:` URL and siphon the secret.
+ */
 async function discoverTokenEndpoint(issuer, fetchImpl) {
+    (0, transport_js_1.assertIssuerTransport)(issuer);
     const url = discoveryUrl(issuer);
     const res = await fetchImpl(url);
     if (!res.ok) {
@@ -41,6 +51,7 @@ async function discoverTokenEndpoint(issuer, fetchImpl) {
     if (!cfg.token_endpoint) {
         throw new Error(`No token_endpoint in OIDC config at ${url}`);
     }
+    (0, transport_js_1.assertEndpointTransport)(cfg.token_endpoint, "token_endpoint");
     return cfg.token_endpoint;
 }
 /** Generate a fresh DPoP keypair for a new session. node:crypto/jose only — no hand-rolled keygen. */
