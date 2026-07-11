@@ -1,3 +1,9 @@
+<!-- mirror-banner -->
+> **Read-only mirror.** `@jeswr/solid-dpop` is developed in the
+> [jeswr/solid-sdk](https://github.com/jeswr/solid-sdk) monorepo and published here by
+> `scripts/mirror-publish.mjs` so `github:`-pinned installs keep working — do not edit
+> or PR this repo. File issues on the monorepo.
+
 # @jeswr/solid-dpop
 
 > ⚠️ **Experimental — AI-agent-generated.** This package was created by an AI coding agent (Claude Opus 4.8, @jeswr's PSS agent) and is under active development. It is not yet production-hardened — review before relying on it.
